@@ -10,8 +10,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "debug.h"
+#include "./page_table.c"
 
-//#define DEBUG 
 void kvm_check(int kvm){
     int ret;
     /* 检查kvm版本 */
@@ -37,8 +38,10 @@ void kvm_kernel(uint8_t code[]){
     struct kvm_run *run;
     
     
+    
     kvm = open("/dev/kvm",O_RDWR|O_CLOEXEC); //打开一个kvm
-    printf("kvmfd:%d\n",kvm);
+
+    //printf("kvmfd:%d\n",kvm);
     kvm_check(kvm);
     /* 创建一个VM，用来代表所有与仿真系统相关的内容，包括内存和cpu */
     /* VM通过文件描述符的形式向我们返回一个VM的句柄 */
@@ -53,12 +56,13 @@ void kvm_kernel(uint8_t code[]){
 
     /*  通知VM他的新内存 */
     struct kvm_userspace_memory_region region = {
-	.slot = 0,
+	.slot = 0,                  /*  对应slot0   */
 	.guest_phys_addr = 0x1000,  /* 告诉vm从guest上看到的物理内存地址是0x1000(第二页) */
 	.memory_size = 0x1000,
 	.userspace_addr = (uint64_t)mem,
     };
     //printf("VM userspace addr:0x%lx\n",(uint64_t)mem);
+    /*  建立guest物理地址空间中的内存区域与qemu-kvm虚拟地址空间中的内存区域的映射   */
     ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &region);
 
     /*  添加一个vCPU  */
@@ -78,6 +82,9 @@ void kvm_kernel(uint8_t code[]){
     ioctl(vcpufd, KVM_GET_SREGS, &sregs);   /*  kvm_arch_vcpu_ioctl_get_sregs(vcpu, kvm_sregs)  返回special regs    */
     sregs.cs.base=0;                        /*  cs指向0地址  */
     sregs.cs.selector=0;
+
+    initialize_page_table(mem,&sregs);      /*  初始化页表  */
+
     ioctl(vcpufd, KVM_SET_SREGS, &sregs);   /*  同步我们的设置  */
 
     struct kvm_regs regs = {
@@ -104,8 +111,10 @@ void kvm_kernel(uint8_t code[]){
                         && run->io.port == 0x3f8            /*  串口编号   */
                         && run->io.count == 1){
            
+
+                        
                         #ifdef DEBUG
-                        printf("run->io.data_offset:0x%lx\n",run->io.data_offset);
+                        printf("run->io.data_offset:0x%llx\n",run->io.data_offset);
                         printf("run:%p\n",run);
                         printf("putchar addr: %p\n",run+run->io.data_offset);
                         #endif
@@ -113,7 +122,7 @@ void kvm_kernel(uint8_t code[]){
                         putchar(
                                 *(  ((char*)run) + run->io.data_offset)
                         );
-                            
+
                     }else{
                         errx(1,"Cannot handle is KVM_EXIT_IO");
                     }
