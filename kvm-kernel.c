@@ -13,6 +13,8 @@
 #include "debug.h"
 #include "./page_table.c"
 
+#define MEM_SIZE 0x40000000    // 400M
+
 void kvm_check(int kvm){
     int ret;
     /* 检查kvm版本 */
@@ -34,6 +36,7 @@ void kvm_kernel(uint8_t code[]){
     int kvm, vmfd, vcpufd, ret;
     uint8_t *mem;
     struct kvm_sregs sregs;
+   // struct kvm_regs regs;
     size_t mmap_size;
     struct kvm_run *run;
     
@@ -47,18 +50,21 @@ void kvm_kernel(uint8_t code[]){
     /* VM通过文件描述符的形式向我们返回一个VM的句柄 */
     vmfd = ioctl(kvm, KVM_CREATE_VM, (unsigned long)0);
 
-    /* 分配一个页 */
-    mem = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    printf("Give KVM:%p\n",mem);
+    
+    /* 分配4M匿名共享内存，下面会将这段共享内存映射到guest中，作为客户机看到的物理内存   */
+   
+    mem = mmap(NULL, MEM_SIZE , PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    printf("Give KVM phy_addr:%p\n",mem);
 
-    /* 将code拷贝过去 */
-    memcpy(mem,code,12);
+    /* 将code拷贝到host分给geust的地址（在guest角度看是GPA，0地址的位置） */
+    //memcpy(mem,code,12);
+    memcpy(mem,code,27);
 
     /*  通知VM他的新内存 */
     struct kvm_userspace_memory_region region = {
-	.slot = 0,                  /*  对应slot0   */
-	.guest_phys_addr = 0x1000,  /* 告诉vm从guest上看到的物理内存地址是0x1000(第二页) */
-	.memory_size = 0x1000,
+	.slot = 0,                  /*  对应slot=0，建立的是GPA到HVA的关系，通过kvm_mem_slot结构体保存，id_to_memslot()负责将用户态的slot转成一个kvm_mem_slot结构  */
+	.guest_phys_addr = 0,       /* 告诉vm从guest上看到的物理内存地址是 0 地址 */
+	.memory_size = MEM_SIZE,
 	.userspace_addr = (uint64_t)mem,
     };
     //printf("VM userspace addr:0x%lx\n",(uint64_t)mem);
@@ -77,47 +83,58 @@ void kvm_kernel(uint8_t code[]){
     /* run是一个指向kvm_run的指针，此时将vcpu对应的 kvm_run映射到用户空间 */
     run = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, vcpufd, 0);
 
+
+
     /*  在开始之前，我们还需要对寄存器进行设置  */
+    struct kvm_regs regs;
+    ioctl(vcpufd, KVM_GET_REGS, &regs);
+    regs.rip = 0;
+    regs.rsp = 0x200000; // stack address
+    regs.rflags = 0x2; // in x86 the 0x2 bit should always be set
+    ioctl(vcpufd, KVM_SET_REGS, &regs);     /*  设置其他寄存器的值，rip指向我们start code的地址0（此时cs=0）   */
+
+
+
+
     /*  这里与x86 linux不同，x86linux需要复位后复位后的cs:ip此时逻辑地址为：0xffff0000:0xfff0即4GB-16字节，即第一条代码：reset vector   */
     ioctl(vcpufd, KVM_GET_SREGS, &sregs);   /*  kvm_arch_vcpu_ioctl_get_sregs(vcpu, kvm_sregs)  返回special regs    */
-    sregs.cs.base=0;                        /*  cs指向0地址  */
-    sregs.cs.selector=0;
-
-    initialize_page_table(mem,&sregs);      /*  初始化页表  */
-
+    sregs.cs.base=sregs.cs.selector=0;                  /*  cs指向0地址  */
+    initialize_page_table(mem,&sregs);      /*  初始化页表,切换到long mode */
+    
+    //setup_page_tables(mem, &sregs);
+   // setup_segment_registers(&sregs);
     ioctl(vcpufd, KVM_SET_SREGS, &sregs);   /*  同步我们的设置  */
 
-    struct kvm_regs regs = {
-	.rip = 0x1000,
-	.rax = 2,
-	.rbx = 2,
-	.rflags = 0x2,
-    };                                      /*   rax、rbx、rflags为x86要求，这里不设置成这样vm就起不来 */
-    ioctl(vcpufd, KVM_SET_REGS, &regs);     /*  设置其他寄存器的值，rip指向我们start code的地址0x1000（此时cs=0）   */
     
-    #ifdef DEBUG
+    //#ifdef DEBUG
     printf("pid:%d\n",getpid());
-    #endif     
+    //getchar();
 
     while(1){
+            //puts("run");
         	ioctl(vcpufd, KVM_RUN, NULL);
+
             /*  run is a kvm_run *  */
 	        switch (run->exit_reason) {
 	        
                 case KVM_EXIT_IO:
                     /*  用这里来模拟串口的通信  */
+                    //printf("run->io.port:%d\n",run->io.port);
                     if(run->io.direction == KVM_EXIT_IO_OUT /*  out  */
                         && run->io.size == 1 
                         && run->io.port == 0x3f8            /*  串口编号   */
                         && run->io.count == 1){
-           
-
+ 
+                       
+                        
+                        
                         
                         #ifdef DEBUG
                         printf("run->io.data_offset:0x%llx\n",run->io.data_offset);
                         printf("run:%p\n",run);
                         printf("putchar addr: %p\n",run+run->io.data_offset);
                         #endif
+                       // getchar();
 
                         putchar(
                                 *(  ((char*)run) + run->io.data_offset)
@@ -140,21 +157,34 @@ void kvm_kernel(uint8_t code[]){
                 case KVM_EXIT_HLT:
 	                puts("KVM_EXIT_HLT");
 	                return 0;
+                case KVM_EXIT_SHUTDOWN:
+                    errx(1,"KVM_EXIT_SHUTDOWN");
+                default:
+                    puts("miss!");
+                    printf("%d\n",run->exit_reason);
+                    return 0;
 	    }
     }
 
 
 }
 int main(){
+    setbuf(stdout,0);
+    setbuf(stdin,0);
+    setbuf(stderr,0);
+    
     const uint8_t code[] = {
 	0xba, 0xf8, 0x03, /* mov $0x3f8, %dx */
 	0x00, 0xd8,       /* add %bl, %al */
-	0x04, '0',        /* add $'0', %al */
+	0x04, '5',        /* add $'0', %al */
 	0xee,             /* out %al, (%dx) */
 	0xb0, '\n',       /* mov $'\n', %al */
 	0xee,             /* out %al, (%dx) */
 	0xf4,             /* hlt */
     };
+
+    const uint8_t code_64[]= "H\xB8\x73\x75\x63\x63\x65\x73\x73\nj\bY\xBA\xf8\x03\x00\x00\xEEH\xC1\xE8\b\xE2\xF9\xF4";
+    
    
-   kvm_kernel(code);
+   kvm_kernel(code_64);
 }

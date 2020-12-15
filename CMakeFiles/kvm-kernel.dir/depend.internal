@@ -3,5 +3,6 @@
 
 CMakeFiles/kvm-kernel.dir/kvm-kernel.c.o
  /root/kkvm-kernel-VM/./page_table.c
+ /root/kkvm-kernel-VM/./page_table.h
  /root/kkvm-kernel-VM/debug.h
  /root/kkvm-kernel-VM/kvm-kernel.c
