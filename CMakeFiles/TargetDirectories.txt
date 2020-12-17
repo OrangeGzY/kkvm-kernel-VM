@@ -1,3 +1,0 @@
-/root/kkvm-kernel-VM/CMakeFiles/edit_cache.dir
-/root/kkvm-kernel-VM/CMakeFiles/rebuild_cache.dir
-/root/kkvm-kernel-VM/CMakeFiles/kvm-kernel.dir

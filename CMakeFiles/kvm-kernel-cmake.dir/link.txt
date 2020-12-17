@@ -1,1 +1,0 @@
-/usr/bin/cc     CMakeFiles/kvm-kernel-cmake.dir/kvm-kernel.c.o  -o kvm-kernel-cmake -rdynamic 
