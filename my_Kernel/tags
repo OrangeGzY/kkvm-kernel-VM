@@ -4,16 +4,18 @@
 !_TAG_PROGRAM_NAME	Exuberant Ctags	//
 !_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
 !_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+CFLAGS	Makefile	/^CFLAGS := -Wall -Werror -fPIE -pie -masm=intel -nostdlib -Os -I.$/;"	m
 MSR_CSTAR	syscall_init.c	4;"	d	file:
 MSR_LSTAR	syscall_init.c	3;"	d	file:
 MSR_STAR	syscall_init.c	2;"	d	file:
 MSR_SYSCALL_MASK	syscall_init.c	5;"	d	file:
 SYSCALL_SUCCCESS	kernel_enter.c	3;"	d	file:
 SYS_INIT_OK	syscall_init.c	6;"	d	file:
+TARGET	Makefile	/^TARGET := my_Kernel.bin $/;"	m
 _start	kernel_entry.S	/^_start:$/;"	l
 hlt	kernel_entry.S	/^hlt:$/;"	l
 kernel_enter	kernel_enter.c	/^int kernel_enter(uint64_t argc,char *argv[]){$/;"	f
-kernel_stack	syscall_general_entry.S	/^kernel_stack: .quad 0$/;"	l
-syscall_general_entry	syscall_general_entry.S	/^syscall_general_entry:$/;"	l
+kernel_stack	syscall/syscall_general_entry.S	/^kernel_stack: .quad 0$/;"	l
+syscall_general_entry	syscall/syscall_general_entry.S	/^syscall_general_entry:$/;"	l
 syscall_init	syscall_init.c	/^int syscall_init(){$/;"	f
-user_stack	syscall_general_entry.S	/^user_stack: .quad 0$/;"	l
+user_stack	syscall/syscall_general_entry.S	/^user_stack: .quad 0$/;"	l
